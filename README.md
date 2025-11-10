@@ -43,7 +43,8 @@ can be used to shortcut the process in the future.
 ```bash
 go run main.go account \
     [--email=<email>] \
-    [--token=<api token> --account-id=<account id> --region=<region>]
+    [--token=<api token> --account-id=<account id> --region=<region>] \
+    [--print-exports]
 ```
 
 An explanation of the command line flags is provided below:
@@ -59,9 +60,24 @@ Option 1: Email & Password
 Option 2: API Token, Account ID, & Region
 
 - `-t`, `--token`: The API token for the current session. This is returned via
-the Blink login flow
-- `-a`, `--account-id`: The account ID of the Blink account
-- `-r`, `--region`: The region of the Blink account (e.g. `u014`, `u011`, etc.)
+the Blink login flow (or use `BLINK_TOKEN` environment variable)
+- `-a`, `--account-id`: The account ID of the Blink account (or use `BLINK_ACCOUNT_ID` environment variable)
+- `-r`, `--region`: The region of the Blink account (e.g. `u014`, `u011`, etc.) (or use `BLINK_REGION` environment variable)
+
+Additional Options:
+
+- `--print-exports`: Print shell export statements for credentials instead of starting liveview.
+This is useful for setting up environment variables for later use.
+
+Example with print-exports:
+
+```bash
+# Login and print exports
+eval $(go run main.go account --email=user@example.com --print-exports)
+
+# Now you can use the liveview command without providing credentials
+go run main.go liveview
+```
 
 ## Liveview Command
 
@@ -73,7 +89,8 @@ This is made available primarily used for testing, but can be used as
 a standalone tool if desired.
 
 Upon running the command, you should see a new ffplay window open with the
-liveview stream. The stream will be gracefully closed by terminating the CLI process.
+liveview stream (default behavior). Alternatively, you can publish the stream
+to an RTSP server using the `--output rtsp` flag.
 
 ```bash
 go run main.go liveview \
@@ -82,19 +99,69 @@ go run main.go liveview \
   --device-type=<device type> \
   --account-id=<account id> \
   --network-id=<network id> \
-  --camera-id=<camera id>
+  --camera-id=<camera id> \
+  [--output=<ffplay|rtsp>]
 ```
 
 An explanation of the command line flags is provided below:
 
 - `-r`, `--region`: The region of the Blink account (e.g. `u014`, `u011`, etc.).
-This is returned via the Blink login flow
+This is returned via the Blink login flow (or use `BLINK_REGION` environment variable)
 - `-t`, `--token`: The API token for the current session. This is also returned via
-the Blink login flow
+the Blink login flow (or use `BLINK_TOKEN` environment variable)
 - `-d`, `--device-type`: The type of (camera) device to connect to (e.g. `owl`, `doorbell`).
-- `-a`, `--account-id`: The account ID of the Blink account
-- `-n`, `--network-id`: The ID of the network that the camera is on
-- `-c`, `--camera-id`: The ID of the camera to watch
+(or use `BLINK_DEVICE_TYPE` environment variable)
+- `-a`, `--account-id`: The account ID of the Blink account (or use `BLINK_ACCOUNT_ID` environment variable)
+- `-n`, `--network-id`: The ID of the network that the camera is on (or use `BLINK_NETWORK_ID` environment variable)
+- `-c`, `--camera-id`: The ID of the camera to watch (or use `BLINK_CAMERA_ID` environment variable)
+- `-o`, `--output`: Output mode - `ffplay` (default, opens a video player) or `rtsp` (publishes to RTSP server).
+(or use `LIVEVIEW_OUTPUT` environment variable)
+
+### RTSP Publishing
+
+When using `--output rtsp`, the stream will be published to an RTSP server instead of
+opening ffplay. This requires:
+
+1. An RTSP server (e.g., MediaMTX) running and accessible
+2. The `RTSP_BASE_URL` environment variable set to the RTSP server base URL
+
+The stream will be published to `{RTSP_BASE_URL}/blink-{camera-id}`.
+
+Example:
+
+```bash
+# Set the RTSP server URL
+export RTSP_BASE_URL=rtsp://localhost:8554
+
+# Publish to RTSP
+go run main.go liveview \
+  --region=u011 \
+  --token=abc123 \
+  --device-type=owl \
+  --account-id=12345 \
+  --network-id=67890 \
+  --camera-id=11111 \
+  --output=rtsp
+```
+
+### Using Environment Variables
+
+All credentials and configuration can be provided via environment variables,
+making it easier to use in containerized environments:
+
+```bash
+export BLINK_REGION=u011
+export BLINK_TOKEN=abc123
+export BLINK_DEVICE_TYPE=owl
+export BLINK_ACCOUNT_ID=12345
+export BLINK_NETWORK_ID=67890
+export BLINK_CAMERA_ID=11111
+export LIVEVIEW_OUTPUT=rtsp
+export RTSP_BASE_URL=rtsp://localhost:8554
+
+# Now you can run without any flags
+go run main.go liveview
+```
 
 ## WebSocket Middleware
 
@@ -228,6 +295,90 @@ To clean the workspace and remove any generated files, run:
 
 ```bash
 make clean
+```
+
+## Docker Usage
+
+This project includes a Dockerfile and docker-compose.yml for easy deployment
+in containerized environments.
+
+### Building the Docker Image
+
+To build the Docker image:
+
+```bash
+docker build -t blink-liveview-middleware .
+```
+
+The Dockerfile uses a multi-stage build:
+1. Build stage: Uses `golang:alpine` to compile the application
+2. Runtime stage: Uses `alpine` with ffmpeg installed for a minimal image
+
+### Using Docker Compose
+
+The included `docker-compose.yml` file sets up both the Blink liveview middleware
+and a MediaMTX RTSP server for easy RTSP streaming.
+
+1. Create a `.env` file with your Blink credentials:
+
+```bash
+BLINK_REGION=u011
+BLINK_TOKEN=your_token_here
+BLINK_DEVICE_TYPE=owl
+BLINK_ACCOUNT_ID=12345
+BLINK_NETWORK_ID=67890
+BLINK_CAMERA_ID=11111
+LIVEVIEW_OUTPUT=rtsp
+RTSP_BASE_URL=rtsp://mediamtx:8554
+```
+
+2. Start the services:
+
+```bash
+docker-compose up
+```
+
+This will:
+- Start a MediaMTX RTSP server on port 8554
+- Start the Blink liveview middleware, publishing the stream to MediaMTX
+- The stream will be available at `rtsp://localhost:8554/blink-{camera-id}`
+
+3. View the stream with any RTSP client:
+
+```bash
+ffplay rtsp://localhost:8554/blink-11111
+```
+
+Or use VLC, OBS, or any other RTSP-compatible player.
+
+### Running the Container Manually
+
+You can also run the container manually:
+
+```bash
+docker run \
+  -e BLINK_REGION=u011 \
+  -e BLINK_TOKEN=your_token \
+  -e BLINK_DEVICE_TYPE=owl \
+  -e BLINK_ACCOUNT_ID=12345 \
+  -e BLINK_NETWORK_ID=67890 \
+  -e BLINK_CAMERA_ID=11111 \
+  -e LIVEVIEW_OUTPUT=rtsp \
+  -e RTSP_BASE_URL=rtsp://your-rtsp-server:8554 \
+  blink-liveview-middleware
+```
+
+To use ffplay mode instead (note: requires X11 forwarding or similar for display):
+
+```bash
+docker run \
+  -e BLINK_REGION=u011 \
+  -e BLINK_TOKEN=your_token \
+  -e BLINK_DEVICE_TYPE=owl \
+  -e BLINK_ACCOUNT_ID=12345 \
+  -e BLINK_NETWORK_ID=67890 \
+  -e BLINK_CAMERA_ID=11111 \
+  blink-liveview-middleware
 ```
 
 # Blink Liveview Process
