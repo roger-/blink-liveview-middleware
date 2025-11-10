@@ -21,7 +21,16 @@ import (
 // accountId: the Blink account ID
 //
 // region: the Blink API region
-func Run(token string, accountId int, region string) {
+//
+// printExports: if true, print shell export statements instead of starting liveview
+func Run(token string, accountId int, region string, printExports bool) {
+	if printExports {
+		fmt.Printf("export BLINK_TOKEN='%s'\n", token)
+		fmt.Printf("export BLINK_ACCOUNT_ID='%d'\n", accountId)
+		fmt.Printf("export BLINK_REGION='%s'\n", region)
+		return
+	}
+
 	baseUrl := common.GetApiUrl(region)
 	homescreenUrl := fmt.Sprintf("%s/api/v4/accounts/%d/homescreen", baseUrl, accountId)
 	devices, err := common.Homescreen(homescreenUrl, token)
@@ -106,7 +115,9 @@ getDevice:
 // email: the Blink account email address
 //
 // password: the Blink account password
-func RunWithCredentials(email string, password string) {
+//
+// printExports: if true, print shell export statements after login instead of starting liveview
+func RunWithCredentials(email string, password string, printExports bool) {
 	fingerprint, err := common.GetFingerprint("")
 	if err != nil {
 		log.Println("error getting fingerprint", err)
@@ -153,5 +164,12 @@ func RunWithCredentials(email string, password string) {
 
 	log.Printf("Logged in successfully.\n\tToken: %s,\n\tAccountId: %d,\n\tRegion: %s\n", tsvResp.AccessToken, tierInfo.AccountId, tierInfo.Tier)
 
-	Run(tsvResp.AccessToken, tierInfo.AccountId, tierInfo.Tier)
+	if printExports {
+		fmt.Printf("export BLINK_TOKEN='%s'\n", tsvResp.AccessToken)
+		fmt.Printf("export BLINK_ACCOUNT_ID='%d'\n", tierInfo.AccountId)
+		fmt.Printf("export BLINK_REGION='%s'\n", tierInfo.Tier)
+		return
+	}
+
+	Run(tsvResp.AccessToken, tierInfo.AccountId, tierInfo.Tier, false)
 }

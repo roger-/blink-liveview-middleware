@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"blink-liveview-websocket/liveview"
+	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -13,36 +15,61 @@ var liveviewCmd = &cobra.Command{
 without the need for logging in or utilizing the WebSocket server.
 
 You can use this command if you already have all of the connection credentials. 
-If you do not have all of the required information, use the account command instead.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		accountId, _ := cmd.Flags().GetInt("account-id")
-		networkId, _ := cmd.Flags().GetInt("network-id")
-		cameraId, _ := cmd.Flags().GetInt("camera-id")
+If you do not have all of the required information, use the account command instead.
 
-		liveview.Run(
-			cmd.Flag("region").Value.String(),
-			cmd.Flag("token").Value.String(),
-			cmd.Flag("device-type").Value.String(),
-			accountId,
-			networkId,
-			cameraId,
-		)
+Credentials can be provided via flags or environment variables:
+- BLINK_REGION
+- BLINK_TOKEN
+- BLINK_DEVICE_TYPE
+- BLINK_ACCOUNT_ID
+- BLINK_NETWORK_ID
+- BLINK_CAMERA_ID
+- LIVEVIEW_OUTPUT (ffplay or rtsp)
+- RTSP_BASE_URL (required when LIVEVIEW_OUTPUT=rtsp)`,
+	Run: func(cmd *cobra.Command, args []string) {
+		region := getStringFlagOrEnv(cmd, "region", "BLINK_REGION")
+		token := getStringFlagOrEnv(cmd, "token", "BLINK_TOKEN")
+		deviceType := getStringFlagOrEnv(cmd, "device-type", "BLINK_DEVICE_TYPE")
+		accountId := getIntFlagOrEnv(cmd, "account-id", "BLINK_ACCOUNT_ID")
+		networkId := getIntFlagOrEnv(cmd, "network-id", "BLINK_NETWORK_ID")
+		cameraId := getIntFlagOrEnv(cmd, "camera-id", "BLINK_CAMERA_ID")
+		output := getStringFlagOrEnv(cmd, "output", "LIVEVIEW_OUTPUT")
+		rtspBaseURL := os.Getenv("RTSP_BASE_URL")
+
+		if output == "" {
+			output = "ffplay"
+		}
+
+		liveview.Run(region, token, deviceType, accountId, networkId, cameraId, output, rtspBaseURL)
 	},
+}
+
+func getStringFlagOrEnv(cmd *cobra.Command, flagName, envName string) string {
+	val := cmd.Flag(flagName).Value.String()
+	if val == "" {
+		val = os.Getenv(envName)
+	}
+	return val
+}
+
+func getIntFlagOrEnv(cmd *cobra.Command, flagName, envName string) int {
+	val, _ := cmd.Flags().GetInt(flagName)
+	if val == 0 {
+		if envVal := os.Getenv(envName); envVal != "" {
+			val, _ = strconv.Atoi(envVal)
+		}
+	}
+	return val
 }
 
 func init() {
 	rootCmd.AddCommand(liveviewCmd)
 
 	liveviewCmd.Flags().StringP("region", "r", "", "The Blink API subdomain/region to use (e.g. u011)")
-	liveviewCmd.MarkFlagRequired("region")
 	liveviewCmd.Flags().StringP("token", "t", "", "The Blink API token to use for authentication")
-	liveviewCmd.MarkFlagRequired("token")
 	liveviewCmd.Flags().StringP("device-type", "d", "", "The Blink device type (e.g. owl, doorbell, etc)")
-	liveviewCmd.MarkFlagRequired("device-type")
 	liveviewCmd.Flags().IntP("account-id", "a", 0, "The Blink account ID")
-	liveviewCmd.MarkFlagRequired("account-id")
 	liveviewCmd.Flags().IntP("network-id", "n", 0, "The Blink network ID")
-	liveviewCmd.MarkFlagRequired("network-id")
 	liveviewCmd.Flags().IntP("camera-id", "c", 0, "The Blink camera ID")
-	liveviewCmd.MarkFlagRequired("camera-id")
+	liveviewCmd.Flags().StringP("output", "o", "", "Output mode: ffplay (default) or rtsp")
 }
